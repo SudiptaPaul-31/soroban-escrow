@@ -154,6 +154,72 @@ fn hash_with_algo(input: &str, algo: &str, json: bool) {
     }
 }
 
+#[derive(Subcommand)]
+enum EncodeCommands {
+    /// Encode string to hex
+    #[command(name = "to-hex")]
+    ToHex {
+        /// Input string to encode
+        input: String,
+    },
+    /// Decode hex to string
+    #[command(name = "from-hex")]
+    FromHex {
+        /// Hex string to decode
+        input: String,
+    },
+    /// Encode string to base64
+    #[command(name = "to-base64")]
+    ToBase64 {
+        /// Input string to encode
+        input: String,
+    },
+    /// Decode base64 to string
+    #[command(name = "from-base64")]
+    FromBase64 {
+        /// Base64 string to decode
+        input: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum TxCommands {
+    /// Format stroops as XLM string
+    #[command(name = "format-xlm")]
+    FormatXlm {
+        /// Stroops amount
+        stroops: u64,
+    },
+    /// Validate a transaction hash
+    #[command(name = "validate-hash")]
+    ValidateHash {
+        /// Transaction hash to validate
+        hash: String,
+    },
+    /// Normalize a transaction hash (lowercase, strip 0x)
+    #[command(name = "normalize-hash")]
+    NormalizeHash {
+        /// Transaction hash to normalize
+        hash: String,
+    },
+    /// Estimate transaction fee
+    #[command(name = "estimate-fee")]
+    EstimateFee {
+        /// Base fee in stroops
+        base_fee: u32,
+        /// Number of operations
+        operations: u32,
+    },
+}
+
+fn ok_json(data: serde_json::Value) -> String {
+    json!({"success": true, "data": data}).to_string()
+}
+
+fn err_json(msg: &str) -> String {
+    json!({"success": false, "error": msg}).to_string()
+}
+
 fn main() {
     let cli = Cli::parse();
     let json = cli.json;
@@ -441,5 +507,17 @@ fn main() {
                 println!("{}", format_xlm(stroops));
             }
         },
+        TxCommands::EstimateFee {
+            base_fee,
+            operations,
+        } => {
+            let stroops = estimate_fee(base_fee, operations);
+            let xlm = format_xlm(stroops as u64);
+            if use_json {
+                println!("{}", ok_json(json!({"stroops": stroops, "xlm": xlm})));
+            } else {
+                println!("{} stroops ({})", stroops, xlm);
+            }
+        }
     }
 }
