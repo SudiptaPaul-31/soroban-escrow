@@ -110,6 +110,92 @@ fn err_json(msg: &str) -> String {
     json!({"success": false, "error": msg}).to_string()
 }
 
+#[derive(Subcommand)]
+enum HashCommands {
+    /// Compute SHA-256 hash
+    Sha256 {
+        /// Input string to hash
+        input: String,
+    },
+    /// Compute SHA-512 hash
+    Sha512 {
+        /// Input string to hash
+        input: String,
+    },
+    /// Compute double SHA-256 hash
+    #[command(name = "double-sha256")]
+    DoubleSha256 {
+        /// Input string to hash
+        input: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum EncodeCommands {
+    /// Encode string to hex
+    #[command(name = "to-hex")]
+    ToHex {
+        /// Input string to encode
+        input: String,
+    },
+    /// Decode hex to string
+    #[command(name = "from-hex")]
+    FromHex {
+        /// Hex string to decode
+        input: String,
+    },
+    /// Encode string to base64
+    #[command(name = "to-base64")]
+    ToBase64 {
+        /// Input string to encode
+        input: String,
+    },
+    /// Decode base64 to string
+    #[command(name = "from-base64")]
+    FromBase64 {
+        /// Base64 string to decode
+        input: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum TxCommands {
+    /// Format stroops as XLM string
+    #[command(name = "format-xlm")]
+    FormatXlm {
+        /// Stroops amount
+        stroops: u64,
+    },
+    /// Validate a transaction hash
+    #[command(name = "validate-hash")]
+    ValidateHash {
+        /// Transaction hash to validate
+        hash: String,
+    },
+    /// Normalize a transaction hash (lowercase, strip 0x)
+    #[command(name = "normalize-hash")]
+    NormalizeHash {
+        /// Transaction hash to normalize
+        hash: String,
+    },
+    /// Estimate transaction fee
+    #[command(name = "estimate-fee")]
+    EstimateFee {
+        /// Base fee in stroops
+        base_fee: u32,
+        /// Number of operations
+        operations: u32,
+    },
+}
+
+fn ok_json(data: serde_json::Value) {
+    println!("{}", json!({"success": true, "data": data}));
+}
+
+fn err_json(msg: &str) {
+    println!("{}", json!({"success": false, "error": msg}));
+}
+
 fn main() {
     let cli = Cli::parse();
     let global_json = cli.json;
