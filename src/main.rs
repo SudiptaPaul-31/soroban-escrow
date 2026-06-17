@@ -29,27 +29,18 @@ enum Commands {
         #[command(subcommand)]
         action: AddressCommands,
     },
-    /// Hash subcommand: `hash sha256 <INPUT>` or `hash <INPUT> --algo sha256`
+    /// Hash data: `hash sha256|sha512|blake3|double-sha256 <INPUT|->`
+    /// Also: `hash <INPUT> --algo sha256|sha512|blake3|double-sha256`
+    #[command(allow_external_subcommands = true)]
     Hash {
         #[command(subcommand)]
         action: Option<HashSubcommand>,
-        /// Input (flat style: hash <INPUT> --algo sha256)
-        #[arg(index = 1)]
-        input: Option<String>,
-        /// Algorithm (flat style)
-        #[arg(long)]
-        algo: Option<String>,
     },
     /// Encode data
+    #[command(allow_external_subcommands = true)]
     Encode {
         #[command(subcommand)]
         action: Option<EncodeSubcommand>,
-        /// Input (flat style: encode <INPUT> --format hex)
-        #[arg(index = 1)]
-        input: Option<String>,
-        /// Format: hex or base64 (flat style)
-        #[arg(long)]
-        format: Option<String>,
     },
     /// Decode data (flat style)
     Decode {
@@ -86,6 +77,9 @@ enum HashSubcommand {
     Sha512 { input: String },
     Blake3 { input: String },
     DoubleSha256 { input: String },
+    /// Flat-style catch-all: `hash <INPUT> --algo sha256`
+    #[command(external_subcommand)]
+    Other(Vec<String>),
 }
 
 #[derive(Subcommand)]
@@ -94,6 +88,9 @@ enum EncodeSubcommand {
     FromHex { input: String },
     ToBase64 { input: String },
     FromBase64 { input: String },
+    /// Flat-style catch-all: `encode <INPUT> --format hex`
+    #[command(external_subcommand)]
+    Other(Vec<String>),
 }
 
 #[derive(Subcommand)]
@@ -117,7 +114,14 @@ fn read_input(s: &str) -> String {
         io::stdin()
             .read_to_string(&mut buf)
             .expect("failed to read stdin");
-        buf.trim_end_matches('\n').to_owned()
+        // Strip only a single trailing newline (as piped input adds one)
+        if buf.ends_with('\n') {
+            buf.pop();
+            if buf.ends_with('\r') {
+                buf.pop();
+            }
+        }
+        buf
     } else {
         s.to_owned()
     }
@@ -131,14 +135,22 @@ fn err_json(msg: &str) -> String {
     serde_json::json!({ "success": false, "error": msg }).to_string()
 }
 
-fn do_hash(input: &str, algo: &str) -> Result<String, String> {
+fn hash_with_algo(input: &str, algo: &str, json: bool) {
     let bytes = input.as_bytes();
-    match algo {
-        "sha256" => Ok(sha256_hex(bytes)),
-        "sha512" => Ok(sha512_hex(bytes)),
-        "blake3" => Ok(blake3_hex(bytes)),
-        "double-sha256" => Ok(double_sha256(bytes)),
-        other => Err(format!("Unknown algorithm: {other}")),
+    let digest = match algo {
+        "sha256" => sha256_hex(bytes),
+        "sha512" => sha512_hex(bytes),
+        "blake3" => blake3_hex(bytes),
+        "double-sha256" => double_sha256(bytes),
+        other => {
+            eprintln!("Error: Unknown algorithm: {other}");
+            process::exit(1);
+        }
+    };
+    if json {
+        println!("{}", ok_json(serde_json::json!(digest)));
+    } else {
+        println!("{digest}");
     }
 }
 
@@ -211,105 +223,115 @@ fn main() {
             }
         },
 
-        Commands::Hash {
-            action,
-            input,
-            algo,
-        } => {
-            let digest = if let Some(sub) = action {
-                // Subcommand style: `hash sha256 <input>`
-                match sub {
-                    HashSubcommand::Sha256 { input } => sha256_hex(read_input(&input).as_bytes()),
-                    HashSubcommand::Sha512 { input } => sha512_hex(read_input(&input).as_bytes()),
-                    HashSubcommand::Blake3 { input } => blake3_hex(read_input(&input).as_bytes()),
-                    HashSubcommand::DoubleSha256 { input } => {
-                        double_sha256(read_input(&input).as_bytes())
-                    }
-                }
-            } else {
-                // Flat style: `hash <input> --algo sha256`
-                let raw = read_input(input.as_deref().unwrap_or("-"));
-                let algorithm = algo.as_deref().unwrap_or("sha256");
-                match do_hash(&raw, algorithm) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        process::exit(1);
-                    }
-                }
-            };
-            if json {
-                println!("{}", ok_json(serde_json::json!(digest)));
-            } else {
-                println!("{digest}");
+        Commands::Hash { action } => match action {
+            Some(HashSubcommand::Sha256 { input }) => {
+                hash_with_algo(&read_input(&input), "sha256", json)
             }
-        }
-
-        Commands::Encode {
-            action,
-            input,
-            format,
-        } => {
-            if let Some(sub) = action {
-                // Subcommand style: `encode to-hex <input>`
-                match sub {
-                    EncodeSubcommand::ToHex { input } => {
-                        let out = to_hex(input.as_bytes());
-                        if json {
-                            println!("{}", ok_json(serde_json::json!(out)));
-                        } else {
-                            println!("{out}");
+            Some(HashSubcommand::Sha512 { input }) => {
+                hash_with_algo(&read_input(&input), "sha512", json)
+            }
+            Some(HashSubcommand::Blake3 { input }) => {
+                hash_with_algo(&read_input(&input), "blake3", json)
+            }
+            Some(HashSubcommand::DoubleSha256 { input }) => {
+                hash_with_algo(&read_input(&input), "double-sha256", json)
+            }
+            Some(HashSubcommand::Other(args)) => {
+                // Flat style: `hash <INPUT> --algo sha256`
+                // args[0] is the input, rest may include --algo <algo>
+                let mut input = args.first().map(|s| s.as_str()).unwrap_or("").to_owned();
+                let mut algo = "sha256".to_owned();
+                let mut i = 1;
+                while i < args.len() {
+                    if args[i] == "--algo" {
+                        if let Some(a) = args.get(i + 1) {
+                            algo = a.clone();
+                            i += 2;
+                            continue;
                         }
                     }
-                    EncodeSubcommand::FromHex { input } => match from_hex(&input) {
-                        Ok(b) => {
-                            let s = String::from_utf8_lossy(&b).into_owned();
-                            if json {
-                                println!("{}", ok_json(serde_json::json!(s)));
-                            } else {
-                                println!("{s}");
-                            }
-                        }
-                        Err(e) => {
-                            if json {
-                                println!("{}", err_json(&e.to_string()));
-                            } else {
-                                eprintln!("Error: {e}");
-                            }
-                            process::exit(1);
-                        }
-                    },
-                    EncodeSubcommand::ToBase64 { input } => {
-                        let out = to_base64(input.as_bytes());
-                        if json {
-                            println!("{}", ok_json(serde_json::json!(out)));
-                        } else {
-                            println!("{out}");
-                        }
-                    }
-                    EncodeSubcommand::FromBase64 { input } => match from_base64(&input) {
-                        Ok(b) => {
-                            let s = String::from_utf8_lossy(&b).into_owned();
-                            if json {
-                                println!("{}", ok_json(serde_json::json!(s)));
-                            } else {
-                                println!("{s}");
-                            }
-                        }
-                        Err(e) => {
-                            if json {
-                                println!("{}", err_json(&e.to_string()));
-                            } else {
-                                eprintln!("Error: {e}");
-                            }
-                            process::exit(1);
-                        }
-                    },
+                    i += 1;
                 }
-            } else {
-                // Flat style: `encode <input> --format hex`
-                let raw = input.as_deref().unwrap_or("");
-                let out = match format.as_deref().unwrap_or("hex") {
+                if input == "-" {
+                    input = read_input("-");
+                }
+                hash_with_algo(&input, &algo, json);
+            }
+            None => {
+                eprintln!("Error: specify a hash algorithm subcommand (sha256, sha512, blake3, double-sha256)");
+                process::exit(1);
+            }
+        },
+
+        Commands::Encode { action } => match action {
+            Some(EncodeSubcommand::ToHex { input }) => {
+                let out = to_hex(input.as_bytes());
+                if json {
+                    println!("{}", ok_json(serde_json::json!(out)));
+                } else {
+                    println!("{out}");
+                }
+            }
+            Some(EncodeSubcommand::FromHex { input }) => match from_hex(&input) {
+                Ok(b) => {
+                    let s = String::from_utf8_lossy(&b).into_owned();
+                    if json {
+                        println!("{}", ok_json(serde_json::json!(s)));
+                    } else {
+                        println!("{s}");
+                    }
+                }
+                Err(e) => {
+                    if json {
+                        println!("{}", err_json(&e.to_string()));
+                    } else {
+                        eprintln!("Error: {e}");
+                    }
+                    process::exit(1);
+                }
+            },
+            Some(EncodeSubcommand::ToBase64 { input }) => {
+                let out = to_base64(input.as_bytes());
+                if json {
+                    println!("{}", ok_json(serde_json::json!(out)));
+                } else {
+                    println!("{out}");
+                }
+            }
+            Some(EncodeSubcommand::FromBase64 { input }) => match from_base64(&input) {
+                Ok(b) => {
+                    let s = String::from_utf8_lossy(&b).into_owned();
+                    if json {
+                        println!("{}", ok_json(serde_json::json!(s)));
+                    } else {
+                        println!("{s}");
+                    }
+                }
+                Err(e) => {
+                    if json {
+                        println!("{}", err_json(&e.to_string()));
+                    } else {
+                        eprintln!("Error: {e}");
+                    }
+                    process::exit(1);
+                }
+            },
+            Some(EncodeSubcommand::Other(args)) => {
+                // Flat style: `encode <INPUT> --format hex`
+                let raw = args.first().map(|s| s.as_str()).unwrap_or("");
+                let mut fmt = "hex".to_owned();
+                let mut i = 1;
+                while i < args.len() {
+                    if args[i] == "--format" {
+                        if let Some(f) = args.get(i + 1) {
+                            fmt = f.clone();
+                            i += 2;
+                            continue;
+                        }
+                    }
+                    i += 1;
+                }
+                let out = match fmt.as_str() {
                     "hex" => to_hex(raw.as_bytes()),
                     "base64" => to_base64(raw.as_bytes()),
                     other => {
@@ -319,7 +341,11 @@ fn main() {
                 };
                 println!("{out}");
             }
-        }
+            None => {
+                eprintln!("Error: specify an encode subcommand");
+                process::exit(1);
+            }
+        },
 
         Commands::Decode { input, format } => {
             let result = match format.as_str() {

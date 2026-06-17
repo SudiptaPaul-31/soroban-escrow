@@ -317,8 +317,8 @@ fn hash_blake3_text() {
 
 #[test]
 fn hash_sha256_stdin() {
-    use std::process::{Command, Stdio};
     use std::io::Write;
+    use std::process::{Command, Stdio};
     let bin = env!("CARGO_BIN_EXE_soroban-toolkit");
     let mut child = Command::new(bin)
         .args(["hash", "sha256", "-"])
@@ -338,8 +338,8 @@ fn hash_sha256_stdin() {
 
 #[test]
 fn hash_blake3_stdin() {
-    use std::process::{Command, Stdio};
     use std::io::Write;
+    use std::process::{Command, Stdio};
     let bin = env!("CARGO_BIN_EXE_soroban-toolkit");
     let mut child = Command::new(bin)
         .args(["hash", "blake3", "-"])
