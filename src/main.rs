@@ -65,18 +65,32 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum AddressCommands {
-    Validate { address: String },
-    Mask { address: String },
+    Validate {
+        address: String,
+    },
+    Mask {
+        address: String,
+    },
     #[command(alias = "detect")]
-    DetectType { address: String },
+    DetectType {
+        address: String,
+    },
 }
 
 #[derive(Subcommand)]
 enum HashSubcommand {
-    Sha256 { input: String },
-    Sha512 { input: String },
-    Blake3 { input: String },
-    DoubleSha256 { input: String },
+    Sha256 {
+        input: String,
+    },
+    Sha512 {
+        input: String,
+    },
+    Blake3 {
+        input: String,
+    },
+    DoubleSha256 {
+        input: String,
+    },
     /// Flat-style catch-all: `hash <INPUT> --algo sha256`
     #[command(external_subcommand)]
     Other(Vec<String>),
@@ -84,10 +98,18 @@ enum HashSubcommand {
 
 #[derive(Subcommand)]
 enum EncodeSubcommand {
-    ToHex { input: String },
-    FromHex { input: String },
-    ToBase64 { input: String },
-    FromBase64 { input: String },
+    ToHex {
+        input: String,
+    },
+    FromHex {
+        input: String,
+    },
+    ToBase64 {
+        input: String,
+    },
+    FromBase64 {
+        input: String,
+    },
     /// Flat-style catch-all: `encode <INPUT> --format hex`
     #[command(external_subcommand)]
     Other(Vec<String>),
@@ -152,72 +174,6 @@ fn hash_with_algo(input: &str, algo: &str, json: bool) {
     } else {
         println!("{digest}");
     }
-}
-
-#[derive(Subcommand)]
-enum EncodeCommands {
-    /// Encode string to hex
-    #[command(name = "to-hex")]
-    ToHex {
-        /// Input string to encode
-        input: String,
-    },
-    /// Decode hex to string
-    #[command(name = "from-hex")]
-    FromHex {
-        /// Hex string to decode
-        input: String,
-    },
-    /// Encode string to base64
-    #[command(name = "to-base64")]
-    ToBase64 {
-        /// Input string to encode
-        input: String,
-    },
-    /// Decode base64 to string
-    #[command(name = "from-base64")]
-    FromBase64 {
-        /// Base64 string to decode
-        input: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum TxCommands {
-    /// Format stroops as XLM string
-    #[command(name = "format-xlm")]
-    FormatXlm {
-        /// Stroops amount
-        stroops: u64,
-    },
-    /// Validate a transaction hash
-    #[command(name = "validate-hash")]
-    ValidateHash {
-        /// Transaction hash to validate
-        hash: String,
-    },
-    /// Normalize a transaction hash (lowercase, strip 0x)
-    #[command(name = "normalize-hash")]
-    NormalizeHash {
-        /// Transaction hash to normalize
-        hash: String,
-    },
-    /// Estimate transaction fee
-    #[command(name = "estimate-fee")]
-    EstimateFee {
-        /// Base fee in stroops
-        base_fee: u32,
-        /// Number of operations
-        operations: u32,
-    },
-}
-
-fn ok_json(data: serde_json::Value) -> String {
-    json!({"success": true, "data": data}).to_string()
-}
-
-fn err_json(msg: &str) -> String {
-    json!({"success": false, "error": msg}).to_string()
 }
 
 fn main() {
@@ -507,17 +463,5 @@ fn main() {
                 println!("{}", format_xlm(stroops));
             }
         },
-        TxCommands::EstimateFee {
-            base_fee,
-            operations,
-        } => {
-            let stroops = estimate_fee(base_fee, operations);
-            let xlm = format_xlm(stroops as u64);
-            if use_json {
-                println!("{}", ok_json(json!({"stroops": stroops, "xlm": xlm})));
-            } else {
-                println!("{} stroops ({})", stroops, xlm);
-            }
-        }
     }
 }
